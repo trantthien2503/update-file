@@ -73,6 +73,9 @@ class Part4Controller(object):
             self.handle_ip(packet, event)
             return
 
+        # Log unsupported packet types
+        log.info(f"Unhandled packet type {packet.type}, dropping packet")
+
     def handle_arp(self, packet, event):
         arp_pkt = packet.payload
 
@@ -120,7 +123,6 @@ class Part4Controller(object):
             self.forward_packet(packet, port)
         else:
             log.info(f"Unknown destination {ip_pkt.dstip}, dropping packet")
-            # Optionally broadcast ARP request for unknown destinations
 
     def install_forwarding_rule(self, nw_dst, dst_mac, port):
         msg = of.ofp_flow_mod()
