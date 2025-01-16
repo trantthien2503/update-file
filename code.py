@@ -13,21 +13,22 @@ class Part4Controller(object):
         self.dpid = connection.dpid  # Datapath ID for the switch
         self.arp_table = {}  # Store L3 -> L2 mappings
         connection.addListeners(self)
-        self.install_default_rules()
 
-    def install_default_rules(self):
-        # Flood traffic on secondary switches
-        if self.dpid in [1, 2, 3, 4]:  # Secondary switches: s1, s2, s3, dcs31
-            self.add_flood_rule()
-        elif self.dpid == 21:  # Core switch: cores21
+        # Default rules for secondary switches
+        if self.dpid in [1, 2, 3, 4]:
+            self.install_flood_rule()
+
+        # Default block rules for core switch (cores21)
+        elif self.dpid == 21:
             self.install_block_rules()
 
-    def add_flood_rule(self):
+    def install_flood_rule(self):
         # Flood all traffic on secondary switches
         msg = of.ofp_flow_mod()
         msg.priority = 10
         msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
+        log.info(f"Flood rule installed on switch {self.dpid}")
 
     def install_block_rules(self):
         # Block all IP traffic from hnotrust1 to serv1
@@ -45,6 +46,7 @@ class Part4Controller(object):
         if nw_proto is not None:
             msg.match.nw_proto = nw_proto
         self.connection.send(msg)
+        log.info(f"Block rule: {nw_src} -> {nw_dst} installed on cores21")
 
     def _handle_PacketIn(self, event):
         packet = event.parsed
@@ -62,13 +64,13 @@ class Part4Controller(object):
     def handle_arp(self, packet, event):
         arp_pkt = packet.payload
 
-        if arp_pkt.opcode == arp.REQUEST:
-            # Respond to ARP requests for the gateway IP
-            if arp_pkt.protodst in self.arp_table:
-                self.send_arp_reply(arp_pkt, event.port)
+        # Learn ARP mappings
+        self.arp_table[arp_pkt.protosrc] = (event.port, packet.src)
+        log.info(f"Learned ARP mapping: {arp_pkt.protosrc} -> {packet.src} on port {event.port}")
 
-            # Learn ARP mappings
-            self.arp_table[arp_pkt.protosrc] = (event.port, packet.src)
+        # Respond to ARP requests for the gateway
+        if arp_pkt.opcode == arp.REQUEST and self.is_gateway(arp_pkt.protodst):
+            self.send_arp_reply(arp_pkt, event.port)
 
     def send_arp_reply(self, arp_pkt, port):
         # Create an ARP reply
@@ -76,13 +78,13 @@ class Part4Controller(object):
         arp_reply.opcode = arp.REPLY
         arp_reply.hwdst = arp_pkt.hwsrc
         arp_reply.protodst = arp_pkt.protosrc
-        arp_reply.hwsrc = EthAddr("00:00:00:00:00:01")  # Example gateway MAC
+        arp_reply.hwsrc = EthAddr("00:00:00:00:00:01")  # Example MAC for gateway
         arp_reply.protosrc = arp_pkt.protodst
 
         # Create Ethernet frame
         eth = ethernet()
         eth.type = ethernet.ARP_TYPE
-        eth.src = EthAddr("00:00:00:00:00:01")  # Example gateway MAC
+        eth.src = EthAddr("00:00:00:00:00:01")  # Example MAC for gateway
         eth.dst = arp_pkt.hwsrc
         eth.payload = arp_reply
 
@@ -91,6 +93,12 @@ class Part4Controller(object):
         msg.data = eth.pack()
         msg.actions.append(of.ofp_action_output(port=port))
         self.connection.send(msg)
+        log.info(f"Sent ARP reply for {arp_pkt.protodst} to {arp_pkt.protosrc}")
+
+    def is_gateway(self, ip):
+        # Check if the IP corresponds to a gateway
+        gateways = ["10.0.1.1", "10.0.2.1", "10.0.3.1", "10.0.4.1", "172.16.10.1"]
+        return ip in gateways
 
     def handle_ip(self, packet, event):
         ip_pkt = packet.payload
@@ -103,16 +111,19 @@ class Part4Controller(object):
             port, mac = self.arp_table[ip_pkt.dstip]
             self.install_forwarding_rule(ip_pkt.dstip, mac, port)
             self.forward_packet(packet, port)
+        else:
+            log.info(f"Unknown destination {ip_pkt.dstip}, dropping packet")
 
     def install_forwarding_rule(self, nw_dst, dst_mac, port):
         # Add a flow rule for forwarding
         msg = of.ofp_flow_mod()
         msg.priority = 20
-        msg.match.dl_type = 0x0800
+        msg.match.dl_type = 0x0800  # IP traffic
         msg.match.nw_dst = nw_dst
         msg.actions.append(of.ofp_action_dl_addr.set_dst(dst_mac))
         msg.actions.append(of.ofp_action_output(port=port))
         self.connection.send(msg)
+        log.info(f"Installed forwarding rule for {nw_dst} -> port {port}")
 
     def forward_packet(self, packet, port):
         # Forward packet to the correct port
