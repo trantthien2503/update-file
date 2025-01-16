@@ -7,10 +7,11 @@ from pox.lib.addresses import EthAddr, IPAddr
 
 log = core.getLogger()
 
+
 class Part4Controller(object):
     def __init__(self, connection):
         self.connection = connection
-        self.dpid = connection.dpid  # Datapath ID for the switch
+        self.dpid = connection.dpid
         self.arp_table = {}  # L3 -> L2 mappings (IP -> (port, MAC))
 
         # Pre-populate ARP table with gateway mappings
@@ -118,8 +119,8 @@ class Part4Controller(object):
             self.install_forwarding_rule(ip_pkt.dstip, mac, port)
             self.forward_packet(packet, port)
         else:
-            # If destination unknown, broadcast ARP request to learn
-            self.broadcast_arp_request(ip_pkt.dstip)
+            log.info(f"Unknown destination {ip_pkt.dstip}, dropping packet")
+            # Optionally broadcast ARP request for unknown destinations
 
     def install_forwarding_rule(self, nw_dst, dst_mac, port):
         msg = of.ofp_flow_mod()
@@ -136,27 +137,6 @@ class Part4Controller(object):
         msg.data = packet.pack()
         msg.actions.append(of.ofp_action_output(port=port))
         self.connection.send(msg)
-
-    def broadcast_arp_request(self, ip):
-        # Broadcast ARP request for unknown destination
-        arp_request = arp()
-        arp_request.opcode = arp.REQUEST
-        arp_request.protosrc = IPAddr("0.0.0.0")  # Use unspecified IP
-        arp_request.protodst = ip
-        arp_request.hwsrc = self.gateway_mac
-        arp_request.hwdst = EthAddr("ff:ff:ff:ff:ff:ff")
-
-        eth = ethernet()
-        eth.type = ethernet.ARP_TYPE
-        eth.src = self.gateway_mac
-        eth.dst = EthAddr("ff:ff:ff:ff:ff:ff")
-        eth.payload = arp_request
-
-        msg = of.ofp_packet_out()
-        msg.data = eth.pack()
-        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
-        self.connection.send(msg)
-        log.info(f"Broadcasting ARP request for {ip}")
 
 def launch():
     def start_switch(event):
