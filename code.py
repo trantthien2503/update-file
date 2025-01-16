@@ -115,6 +115,7 @@ class Part4Controller(object):
 
         # Learn source IP mapping
         self.arp_table[ip_pkt.srcip] = (event.port, packet.src)
+        log.info(f"Learned IP mapping: {ip_pkt.srcip} -> {packet.src} on port {event.port}")
 
         # Forward packet if destination IP is known
         if ip_pkt.dstip in self.arp_table:
