@@ -1,4 +1,7 @@
-# Part 3 0f Project 2
+# Part 4 of UWCSE's Project 3
+#
+# based on Lab Final from UCSC's Networking Class
+# which is based on of_tutorial by James McCauley
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
@@ -54,13 +57,11 @@ class Part3Controller (object):
     self._allow_all()
 
   def cores21_setup(self):
-    self._allow_arp()
     self._block()                               # block comm.s w/hnotrust
     self._internal_to_external()                # guide traffic through sw
     self._allow_all()                           # flood/drop the rest
 
   def dcs31_setup(self):
-    self._allow_arp()
     self._allow_all()
 
   # flood all communications going to through the net, dropping the rest
@@ -69,14 +70,7 @@ class Part3Controller (object):
                                          priority=2))     # flood to all ports
     # otherwise, iperfs will hang
     self.connection.send(of.ofp_flow_mod(priority=1))
-
-  # Allow ARP traffic to flood
-  def _allow_arp(self):
-    arp_rule = of.ofp_flow_mod(priority=15,
-                                match=of.ofp_match(dl_type=0x806),
-                                actions=[of.ofp_action_output(port=of.OFPP_FLOOD)])
-    self.connection.send(arp_rule)
-
+  
   # block ICMP from hnotrust to anyone, and block all IP to serv1
   def _block(self, block=IPS['hnotrust'][0]):
     block_icmp = of.ofp_flow_mod(priority=20,
@@ -89,7 +83,7 @@ class Part3Controller (object):
                                                     nw_src=block,
                                                     nw_dst=IPS['serv1'][0]))
     self.connection.send(block_to_serv)
-
+  
   # allow IP traffic as normal
   def _internal_to_external(self):
     host = {10: (IPS['h10'][0], 1),
@@ -97,7 +91,7 @@ class Part3Controller (object):
             30: (IPS['h30'][0], 3),
             40: (IPS['serv1'][0], 4),
             50: (IPS['hnotrust'][0], 5)}
-
+    
     for i in range(len(host)):
       h = host[(i+1)*10][0]
       p = host[(i+1)*10][1]
