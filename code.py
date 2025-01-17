@@ -1,38 +1,48 @@
-def _handle_PacketIn(self, event):
-    """
-    Handles incoming packets and decides how to process them.
-    """
-    packet = event.parsed
-    if not packet.parsed:
-        log.warning("Ignoring incomplete packet")
-        return
+#!/usr/bin/python
 
-    packet_in = event.ofp
+from mininet.topo import Topo
+from mininet.net import Mininet
+from mininet.util import dumpNodeConnections
+from mininet.log import setLogLevel
+from mininet.cli import CLI
+from mininet.node import RemoteController
 
-    # Drop IPv6 packets (Ethernet type 0x86DD = 34525)
-    if packet.type == pkt.ethernet.IPV6_TYPE:
-        log.debug("Dropping unsupported IPv6 packet")
-        return
+class part4_topo(Topo):
+  def build(self):
+    #add switches
+    s1 = self.addSwitch('s1')
+    s2 = self.addSwitch('s2')
+    s3 = self.addSwitch('s3')
+    cores21 = self.addSwitch('cores21')
+    dcs31 = self.addSwitch('dcs31')
+    #add hosts
+    h10 = self.addHost('h10',mac='00:00:00:00:00:01',ip='10.0.1.10/24',defaultRoute='via 10.0.1.1')
+    h20 = self.addHost('h20',mac='00:00:00:00:00:02',ip='10.0.2.20/24',defaultRoute='via 10.0.2.1')
+    h30 = self.addHost('h30',mac='00:00:00:00:00:03',ip='10.0.3.30/24',defaultRoute='via 10.0.3.1')
+    serv1 = self.addHost('serv1',mac='00:00:00:00:00:04',ip='10.0.4.10/24',defaultRoute='via 10.0.4.1')
+    hnotrust1 = self.addHost('hnotrust1',mac='00:00:00:00:00:05',ip='172.16.10.100/24',defaultRoute='via 172.16.10.1')
+    #add links
+    self.addLink(h10,s1)
+    self.addLink(h20,s2)
+    self.addLink(h30,s3)
+    self.addLink(s1,cores21)
+    self.addLink(s2,cores21)
+    self.addLink(s3,cores21)
+    self.addLink(serv1,dcs31)
+    self.addLink(cores21,dcs31)
+    self.addLink(hnotrust1,cores21)
 
-    # Handle ARP packets
-    if packet.type == pkt.ethernet.ARP_TYPE:
-        self.handle_arp(packet, packet_in)
-        return
+topos = {'part4' : part4_topo}
 
-    # Handle IPv4 packets
-    if packet.type == pkt.ethernet.IP_TYPE:
-        ipv4 = packet.payload
+def configure():
+  topo = part4_topo()
+  net = Mininet(topo=topo, controller=RemoteController)
+  net.start()
+  
+  CLI(net)
 
-        # Drop DNS packets explicitly (UDP packets with port 53)
-        if ipv4.protocol == pkt.ipv4.UDP_PROTOCOL:
-            udp = ipv4.payload
-            if udp.srcport == 53 or udp.dstport == 53:  # DNS traffic
-                log.debug("Dropping unsupported DNS packet")
-                return
+  net.stop()
 
-        # Process IP packets
-        self.handle_ip(packet, packet_in)
-        return
 
-    # Log and skip unsupported packet types
-    log.debug(f"Unsupported packet type: {packet.type}")
+if __name__ == '__main__':
+  configure()
